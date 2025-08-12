@@ -10,6 +10,8 @@ import axios from 'axios';
 import fs from 'fs';
 import pdf from 'pdf-parse/lib/pdf-parse.js'
 
+
+
 const AI = new OpenAI({
     apiKey: process.env.GEMINI_API_KEY,
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -111,53 +113,60 @@ res.json({success: true, content})
 
 
 export const generateImage = async (req, res) => {
-    try {
-        const { userId } = req.auth();
-        const { prompt, publish } = req.body;
-        const plan = req.plan;
+  try {
+    const { userId } = req.auth();
+    const { prompt, publish } = req.body;
+    const plan = req.plan;
 
-        if (plan !== 'premium') {
-            return res.json({ success: false, message: "This feature is only available for premium subscriptions" });
-        }
-
-        const formData = new FormData();
-        formData.append('prompt', prompt);
-
-        const { data } = await axios.post(
-            "https://clipdrop-api.co/text-to-image/v1",
-            formData,
-            {
-                headers: {
-                    ...formData.getHeaders(), 
-                    'x-api-key': process.env.CLIPDROP_API_KEY,
-                },
-                responseType: "arraybuffer",
-            }
-        );
-
-        const base64Image = `data:image/png;base64,${Buffer.from(data, 'binary').toString('base64')}`;
-
-        const { secure_url } = await cloudinary.uploader.upload(base64Image);
-
-        await sql`INSERT INTO creations (user_id, prompt, content, type, publish)
-                  VALUES (${userId}, ${prompt}, ${secure_url}, 'image', ${publish ?? false})`;
-
-        res.json({ success: true, secure_url });
-
-    } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message });
+    if (plan !== "premium") {
+      return res.json({
+        success: false,
+        message: "This feature is only available for premium subscriptions"
+      });
     }
-};
 
+    // Prepare FormData for ClipDrop API
+    const formData = new FormData();
+    formData.append("prompt", prompt);
+
+    // Call ClipDrop API
+    const { data } = await axios.post(
+      "https://clipdrop-api.co/text-to-image/v1",
+      formData,
+      {
+        headers: {
+          ...formData.getHeaders(),
+          "x-api-key": process.env.CLIPDROP_API_KEY
+        },
+        responseType: "arraybuffer"
+      }
+    );
+
+    // Convert to Base64 and upload to Cloudinary
+    const base64Image = `data:image/png;base64,${Buffer.from(data, "binary").toString("base64")}`;
+    const { secure_url } = await cloudinary.uploader.upload(base64Image);
+
+    // Save to DB
+    await sql`
+      INSERT INTO creations (user_id, prompt, content, type, publish)
+      VALUES (${userId}, ${prompt}, ${secure_url}, 'image', ${publish ?? false})
+    `;
+
+    // ✅ Return with the same key the frontend expects
+    res.json({ success: true, content: secure_url });
+
+  } catch (error) {
+    console.error(error);
+    res.json({ success: false, message: error.message });
+  }
+};
 
 export const removeImageBackground = async (req, res) => {
     try {
-        const { userId } = req.auth();
-        const image = req.file;
+        const { userId } = req.auth; // ✅ no ()
         const plan = req.plan;
 
-        if (plan !== 'premium') {
+        if (plan !== "premium") {
             return res.json({ success: false, message: "This feature is only available for premium subscriptions" });
         }
 
@@ -167,18 +176,20 @@ export const removeImageBackground = async (req, res) => {
 
         // Upload to Cloudinary with background removal
         const { secure_url } = await cloudinary.uploader.upload(req.file.path, {
-            transformation: [{ effect: 'background_removal' }]
+            transformation: [{ effect: "background_removal" }]
         });
 
+        // Save to DB
         await sql`
             INSERT INTO creations (user_id, prompt, content, type)
             VALUES (${userId}, 'Remove background from image', ${secure_url}, 'image')
         `;
 
-        res.json({ success: true, secure_url });
+        // ✅ return as 'content' so frontend matches
+        res.json({ success: true, content: secure_url });
 
     } catch (error) {
-        console.log(error.message);
+        console.error(error.message);
         res.json({ success: false, message: error.message });
     }
 };
@@ -188,7 +199,8 @@ export const removeImageBackground = async (req, res) => {
 export const removeImageObject = async (req, res) => {
     try {
         const { userId } = req.auth();
-         const { object } = req.body();
+        // const { object } = req.body();
+         const { object } = req.body;
         const image = req.file;
         const plan = req.plan;
 
@@ -221,6 +233,7 @@ export const removeImageObject = async (req, res) => {
         res.json({ success: false, message: error.message });
     }
 };
+
 
 
 export const resumeReview = async (req, res) => {
@@ -279,3 +292,5 @@ const content = response.choices[0].message.content
         res.json({ success: false, message: error.message });
     }
 };
+
+
